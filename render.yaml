@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: turbos-app
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run APP.py --server.port=10000
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10
