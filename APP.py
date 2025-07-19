@@ -14,30 +14,43 @@ TP_DOC_IGNORAR = ["PCONS", "PEF"]
 
 # Carregando os dados
 df_pedidos = pd.read_excel(URL_PEDIDOS)
+df_pedidos.columns = df_pedidos.columns.str.strip()  # tira espaços
 
-# Normalização
-df_pedidos.columns = df_pedidos.columns.str.strip()
+# Exibir nomes das colunas para debug
+st.write("🧪 Colunas encontradas na planilha PEDIDOS:")
+st.write(df_pedidos.columns.tolist())
+
+# Verificar se a coluna esperada existe
+col_qtd = None
+for col in df_pedidos.columns:
+    if "QUANTIDADE" in col.upper() and "REAL" in col.upper():
+        col_qtd = col
+        break
+
+if col_qtd is None:
+    st.error("❌ Coluna de quantidade real não encontrada.")
+    st.stop()
+
+# Aplicar filtros
 df_pedidos['Tp.Doc'] = df_pedidos['Tp.Doc'].astype(str).str.strip()
 df_pedidos['Descricao'] = df_pedidos['Descricao'].astype(str).str.upper()
 
-# Filtros
 filtro_doc = ~df_pedidos['Tp.Doc'].isin(TP_DOC_IGNORAR)
 filtro_desc = ~df_pedidos['Descricao'].str.contains('|'.join(PALAVRAS_DESC_IGNORAR), case=False, na=False)
-filtro_qtd = df_pedidos['QUANTIDADE_REAL'] > 0
+filtro_qtd = df_pedidos[col_qtd] > 0
 
 df_filtrado = df_pedidos[filtro_doc & filtro_desc & filtro_qtd].copy()
 
-# Renomear coluna
-df_filtrado.rename(columns={"QUANTIDADE_REAL": "Quantidade_Produzir"}, inplace=True)
+# Renomear para padrão
+df_filtrado.rename(columns={col_qtd: "Quantidade_Produzir"}, inplace=True)
 
-# Selecionar e reordenar colunas
+# Selecionar colunas para exibir
 colunas_exibir = ["Cliente", "Nome", "Tp.Doc", "Pedido", "Produto", "Descricao", "Qtde. Abe", "Quantidade_Produzir"]
-df_resultado = df_filtrado.loc[:, colunas_exibir]
+df_resultado = df_filtrado.loc[:, [col for col in colunas_exibir if col in df_filtrado.columns]]
 
-# Exibir no Streamlit
 st.dataframe(df_resultado, use_container_width=True)
 
-# Botão de download em Excel
+# Botão para baixar Excel
 buffer = io.BytesIO()
 df_resultado.to_excel(buffer, index=False)
 buffer.seek(0)
