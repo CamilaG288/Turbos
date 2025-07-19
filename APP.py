@@ -1,32 +1,36 @@
 import streamlit as st
 import pandas as pd
 
-st.set_page_config(page_title="Análise de Pedidos", layout="wide")
-st.title("📦 Análise de Pedidos - Quantidade a Produzir")
+st.set_page_config(page_title="🔧 Painel de Montagem", layout="wide")
+st.title("📌 Pedidos com Quantidade a Produzir > 0")
 
-# --- Carregar pedidos ---
-URL_PEDIDOS = "https://github.com/CamilaG288/Turbos_montaveis/raw/main/PEDIDOS.xlsx"
-df_pedidos = pd.read_excel(URL_PEDIDOS)
+# URLs atualizados do novo repositório "Turbos"
+URL_PEDIDOS = "https://github.com/CamilaG288/Turbos/raw/main/PEDIDOS.xlsx"
 
-# --- Cálculo: Quantidade a Produzir ---
-df_pedidos["Quantidade_Produzir"] = df_pedidos.iloc[:, 15] - (df_pedidos.iloc[:, 16] - df_pedidos.iloc[:, 13])
+# Leitura dos pedidos
+df = pd.read_excel(URL_PEDIDOS)
 
-# --- Filtros de exclusão ---
+# Renomear colunas pelo índice para facilitar
+df.columns = df.columns.str.strip()  # Remove espaços
+df["Quantidade_Produzir"] = df.iloc[:, 15] - (df.iloc[:, 16] - df.iloc[:, 13])  # Qtde. Abe - (Qtde. Separ - Qtde. Ate)
+
+# Filtros de exclusão
 desc_excluir = ["BONÉ", "CAMISETA", "CHAVEIRO", "CORTA VENTO", "CORTE"]
-tpdoc_excluir = ["PCONS", "PEF"]
-
-# Padronização
-df_pedidos["Descricao"] = df_pedidos["Descricao"].astype(str).str.upper()
-df_pedidos["Tp.Doc"] = df_pedidos["Tp.Doc"].astype(str).str.strip().str.upper()
+tipos_doc_excluir = ["PCONS", "PEF"]
 
 # Aplicar filtros
-df_pedidos_filtrados = df_pedidos[
-    (df_pedidos["Quantidade_Produzir"] > 0) &
-    (~df_pedidos["Descricao"].str.contains("|".join(desc_excluir))) &
-    (~df_pedidos["Tp.Doc"].isin(tpdoc_excluir))
+df_filtrado = df[
+    (df["Quantidade_Produzir"] > 0) &
+    (~df.iloc[:, 8].str.upper().str.contains("|".join(desc_excluir))) &  # Coluna I - Descrição
+    (~df.iloc[:, 5].isin(tipos_doc_excluir))  # Coluna F - Tp.Doc
 ].copy()
 
-# Diagnóstico
-st.write("📥 Total de pedidos lidos:", df_pedidos.shape)
-st.write("📋 Após filtros aplicados:", df_pedidos_filtrados.shape)
-st.dataframe(df_pedidos_filtrados[["Cliente", "Nome", "Tp.Doc", "Pedido", "Produto", "Descricao", "Quantidade_Produzir"]].head(50))
+# Selecionar e renomear colunas
+df_resultado = df_filtrado.loc[:, [
+    "Cliente",  # col 1
+    "Nome",     # col 2
+    "Tp.Doc",   # col 5
+    "Pedido",   # col 6
+    "Produto",  # col 11
+    "Descricao",  # col 8
+    "Qtde. Abe",  # col 15
