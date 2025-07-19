@@ -80,41 +80,43 @@ df_estrutura["COD_PAI"] = df_estrutura["COD_PAI"].astype(str).str.strip()
 df_estrutura["COD_FILHO"] = df_estrutura["COD_FILHO"].astype(str).str.strip()
 df_estrutura["QTDE_POR_UNID"] = pd.to_numeric(df_estrutura["QTDE_POR_UNID"], errors="coerce").fillna(0)
 
-# Filtrar pais finais que precisam ser produzidos
+# Produtos a produzir
 df_produzir = df_filtrado[["Produto", "Quantidade_Produzir"]].copy()
 df_produzir["Produto"] = df_produzir["Produto"].astype(str).str.strip()
 df_produzir = df_produzir.groupby("Produto", as_index=False).sum()
 codigos_pais_finais = set(df_produzir["Produto"])
 
-# Separar filhos diretos (nível 1)
+# Nível 1 - Filhos diretos do pai final (exclui conjuntos "P")
 nivel1 = df_estrutura[
     df_estrutura["COD_PAI"].isin(codigos_pais_finais) &
     (~df_estrutura["COD_FILHO"].str.endswith("P"))
 ].copy()
 nivel1["PAI_FINAL"] = nivel1["COD_PAI"]
 
-# Identificar conjuntos com final "P" (nível 1.5)
+# Nível 2 - Filhos diretos de conjuntos com "P", herdando o pai final
 conjuntos_p = df_estrutura[
     df_estrutura["COD_PAI"].isin(codigos_pais_finais) &
     (df_estrutura["COD_FILHO"].str.endswith("P"))
 ].copy()
+codigos_conjuntos_p = set(conjuntos_p["COD_FILHO"])
 
-# Agora buscar os filhos desses conjuntos (nível 2)
+# Filhos diretos dos conjuntos P (nível 2), excluindo filhos que também são conjuntos
 filhos_nivel2 = df_estrutura[
-    df_estrutura["COD_PAI"].isin(conjuntos_p["COD_FILHO"])
+    df_estrutura["COD_PAI"].isin(codigos_conjuntos_p) &
+    (~df_estrutura["COD_FILHO"].str.endswith("P"))
 ].copy()
 
-# Atribuir o pai final original
+# Herdar o pai final dos conjuntos
 conjunto_para_pai_final = dict(zip(conjuntos_p["COD_FILHO"], conjuntos_p["COD_PAI"]))
 filhos_nivel2["PAI_FINAL"] = filhos_nivel2["COD_PAI"].map(conjunto_para_pai_final)
 
-# Juntar níveis 1 e 2 (com pai final certo)
+# Juntar nível 1 e 2
 estrutura_n1n2 = pd.concat([
     nivel1[["PAI_FINAL", "COD_FILHO", "QTDE_POR_UNID"]],
     filhos_nivel2[["PAI_FINAL", "COD_FILHO", "QTDE_POR_UNID"]]
 ], ignore_index=True)
 
-# Juntar com quantidade a produzir
+# Juntar com qtde a produzir
 estrutura_necessaria = estrutura_n1n2.merge(df_produzir, left_on="PAI_FINAL", right_on="Produto", how="inner")
 
 # Calcular total necessário
@@ -122,14 +124,14 @@ estrutura_necessaria["QTDE_TOTAL_NECESSARIA"] = (
     estrutura_necessaria["QTDE_POR_UNID"] * estrutura_necessaria["Quantidade_Produzir"]
 )
 
-# Visualização final
+# Resultado final
 df_explodido = estrutura_necessaria[[
     "PAI_FINAL", "COD_FILHO", "QTDE_POR_UNID", "QTDE_TOTAL_NECESSARIA"
 ]].rename(columns={"PAI_FINAL": "COD_PAI"})
 
 st.dataframe(df_explodido, use_container_width=True)
 
-# Download Excel
+# Baixar Excel
 buffer = io.BytesIO()
 df_explodido.to_excel(buffer, index=False)
 buffer.seek(0)
