@@ -49,18 +49,18 @@ st.download_button(
     file_name="Pedidos_a_Produzir.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
-st.subheader("📊 Cálculo Total de Componentes por Estrutura")
+st.subheader("📊 Cálculo Total de Componentes - Nível 1 e 2")
 
-# URL da estrutura
+# Carregar estrutura
 URL_ESTRUTURA = "https://github.com/CamilaG288/Turbos_montaveis/raw/main/ESTRUTURAS.xlsx"
 df_estrutura = pd.read_excel(URL_ESTRUTURA, header=0)
 
-# 🧽 Lista de palavras para ignorar na descrição dos componentes
+# Lista para ignorar por descrição
 DESCR_IGNORAR = [
     "SACO PLASTICO", "CAIXA", "PLAQUETA", "REBITE", "ETIQUETA", "CERTIFICADO", "CINTA PLASTICA"
 ]
 
-# 🏷️ Renomear colunas por índice
+# Renomear colunas por índice
 df_estrutura = df_estrutura.rename(columns={
     df_estrutura.columns[1]: "COD_PAI",
     df_estrutura.columns[15]: "COD_FILHO",
@@ -69,7 +69,7 @@ df_estrutura = df_estrutura.rename(columns={
     df_estrutura.columns[17]: "DESCRICAO"
 })
 
-# 🧹 Limpeza e filtros
+# Limpar e padronizar
 df_estrutura = df_estrutura[
     (df_estrutura["FANTASMA"] != "S") &
     (df_estrutura["COD_FILHO"].notna()) &
@@ -80,41 +80,63 @@ df_estrutura["COD_PAI"] = df_estrutura["COD_PAI"].astype(str).str.strip()
 df_estrutura["COD_FILHO"] = df_estrutura["COD_FILHO"].astype(str).str.strip()
 df_estrutura["QTDE_POR_UNID"] = pd.to_numeric(df_estrutura["QTDE_POR_UNID"], errors="coerce").fillna(0)
 
-# 🔁 Ignorar conjuntos com final "P", mas manter filhos ligados ao pai final
-conjuntos_p = df_estrutura[df_estrutura["COD_PAI"].str.endswith("P")].copy()
-filhos_conjuntos_p = conjuntos_p[["COD_FILHO", "QTDE_POR_UNID", "COD_PAI"]].copy()
-
-conjuntos_originais = df_estrutura[~df_estrutura["COD_PAI"].str.endswith("P")].copy()
-estrutura_final = pd.concat([conjuntos_originais, filhos_conjuntos_p], ignore_index=True)
-
-# 🧮 Agrupar quantidade a produzir por Produto
+# Filtrar pais finais que precisam ser produzidos
 df_produzir = df_filtrado[["Produto", "Quantidade_Produzir"]].copy()
 df_produzir["Produto"] = df_produzir["Produto"].astype(str).str.strip()
 df_produzir = df_produzir.groupby("Produto", as_index=False).sum()
+codigos_pais_finais = set(df_produzir["Produto"])
 
-# 🔗 Juntar estrutura com quantidades
-estrutura_necessaria = estrutura_final.merge(df_produzir, left_on="COD_PAI", right_on="Produto", how="inner")
+# Separar filhos diretos (nível 1)
+nivel1 = df_estrutura[
+    df_estrutura["COD_PAI"].isin(codigos_pais_finais) &
+    (~df_estrutura["COD_FILHO"].str.endswith("P"))
+].copy()
+nivel1["PAI_FINAL"] = nivel1["COD_PAI"]
 
-# 🧾 Calcular total necessário de cada componente
+# Identificar conjuntos com final "P" (nível 1.5)
+conjuntos_p = df_estrutura[
+    df_estrutura["COD_PAI"].isin(codigos_pais_finais) &
+    (df_estrutura["COD_FILHO"].str.endswith("P"))
+].copy()
+
+# Agora buscar os filhos desses conjuntos (nível 2)
+filhos_nivel2 = df_estrutura[
+    df_estrutura["COD_PAI"].isin(conjuntos_p["COD_FILHO"])
+].copy()
+
+# Atribuir o pai final original
+conjunto_para_pai_final = dict(zip(conjuntos_p["COD_FILHO"], conjuntos_p["COD_PAI"]))
+filhos_nivel2["PAI_FINAL"] = filhos_nivel2["COD_PAI"].map(conjunto_para_pai_final)
+
+# Juntar níveis 1 e 2 (com pai final certo)
+estrutura_n1n2 = pd.concat([
+    nivel1[["PAI_FINAL", "COD_FILHO", "QTDE_POR_UNID"]],
+    filhos_nivel2[["PAI_FINAL", "COD_FILHO", "QTDE_POR_UNID"]]
+], ignore_index=True)
+
+# Juntar com quantidade a produzir
+estrutura_necessaria = estrutura_n1n2.merge(df_produzir, left_on="PAI_FINAL", right_on="Produto", how="inner")
+
+# Calcular total necessário
 estrutura_necessaria["QTDE_TOTAL_NECESSARIA"] = (
     estrutura_necessaria["QTDE_POR_UNID"] * estrutura_necessaria["Quantidade_Produzir"]
 )
 
-# 📋 Organizar resultado
+# Visualização final
 df_explodido = estrutura_necessaria[[
-    "COD_PAI", "COD_FILHO", "QTDE_POR_UNID", "QTDE_TOTAL_NECESSARIA"
-]].copy()
+    "PAI_FINAL", "COD_FILHO", "QTDE_POR_UNID", "QTDE_TOTAL_NECESSARIA"
+]].rename(columns={"PAI_FINAL": "COD_PAI"})
 
 st.dataframe(df_explodido, use_container_width=True)
 
-# 📥 Baixar Excel
-buffer2 = io.BytesIO()
-df_explodido.to_excel(buffer2, index=False)
-buffer2.seek(0)
+# Download Excel
+buffer = io.BytesIO()
+df_explodido.to_excel(buffer, index=False)
+buffer.seek(0)
 
 st.download_button(
-    label="📥 Baixar Explosão da Estrutura com Totais",
-    data=buffer2,
-    file_name="Estrutura_Total_Componentes.xlsx",
+    label="📥 Baixar Estrutura Nível 1 e 2",
+    data=buffer,
+    file_name="Explosao_Estrutura_Nivel_1e2.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
