@@ -49,3 +49,68 @@ st.download_button(
     file_name="Pedidos_a_Produzir.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
+st.subheader("📊 Cálculo Total de Componentes por Estrutura")
+
+# Carregar estrutura
+URL_ESTRUTURA = "https://github.com/CamilaG288/Turbos_montaveis/raw/main/ESTRUTURAS.xlsx"
+df_estrutura = pd.read_excel(URL_ESTRUTURA, header=0)
+
+# Renomear colunas por índice
+df_estrutura = df_estrutura.rename(columns={
+    df_estrutura.columns[1]: "COD_PAI",
+    df_estrutura.columns[15]: "COD_FILHO",
+    df_estrutura.columns[22]: "QTDE_POR_UNID",
+    df_estrutura.columns[18]: "FANTASMA",
+    df_estrutura.columns[17]: "DESCRICAO"
+})
+
+# Limpeza e filtragem
+df_estrutura = df_estrutura[
+    (df_estrutura["FANTASMA"] != "S") &
+    (df_estrutura["COD_FILHO"].notna()) &
+    (~df_estrutura["DESCRICAO"].str.upper().str.contains('|'.join(DESCR_IGNORAR), na=False))
+].copy()
+
+# Padronizar campos
+df_estrutura["COD_PAI"] = df_estrutura["COD_PAI"].astype(str).str.strip()
+df_estrutura["COD_FILHO"] = df_estrutura["COD_FILHO"].astype(str).str.strip()
+df_estrutura["QTDE_POR_UNID"] = pd.to_numeric(df_estrutura["QTDE_POR_UNID"], errors="coerce").fillna(0)
+
+# Remover conjuntos com final P como pai
+conjuntos_p = df_estrutura[df_estrutura["COD_PAI"].str.endswith("P")].copy()
+filhos_conjuntos_p = conjuntos_p[["COD_FILHO", "QTDE_POR_UNID", "COD_PAI"]].copy()
+conjuntos_originais = df_estrutura[~df_estrutura["COD_PAI"].str.endswith("P")].copy()
+estrutura_final = pd.concat([conjuntos_originais, filhos_conjuntos_p], ignore_index=True)
+
+# Listar produtos com qtde a produzir
+codigos_para_produzir = df_filtrado["Produto"].astype(str).unique()
+df_produzir = df_filtrado[["Produto", "Quantidade_Produzir"]].copy()
+df_produzir = df_produzir.groupby("Produto", as_index=False).sum()
+
+# Mesclar estrutura com produtos a produzir
+estrutura_necessaria = estrutura_final.merge(df_produzir, left_on="COD_PAI", right_on="Produto", how="inner")
+
+# Calcular quantidade total necessária
+estrutura_necessaria["QTDE_TOTAL_NECESSARIA"] = (
+    estrutura_necessaria["QTDE_POR_UNID"] * estrutura_necessaria["Quantidade_Produzir"]
+)
+
+# Organizar visual
+df_explodido = estrutura_necessaria[[
+    "COD_PAI", "COD_FILHO", "QTDE_POR_UNID", "QTDE_TOTAL_NECESSARIA"
+]].copy()
+
+st.dataframe(df_explodido, use_container_width=True)
+
+# Baixar Excel
+import io
+buffer2 = io.BytesIO()
+df_explodido.to_excel(buffer2, index=False)
+buffer2.seek(0)
+
+st.download_button(
+    label="📥 Baixar Explosão da Estrutura com Totais",
+    data=buffer2,
+    file_name="Estrutura_Total_Componentes.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
